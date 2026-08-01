@@ -1,2 +1,0 @@
-Node: v24.15.0
-Resolved: C:\xampp82\htdocs\FU_UBRA_Mobile\node_modules\@babel\core\lib\index.js

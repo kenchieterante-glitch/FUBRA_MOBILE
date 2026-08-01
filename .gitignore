@@ -1,1 +1,7 @@
 node_modules
+.env
+.expo
+.claude
+diag.txt
+diag2.txt
+expo-qr.log
