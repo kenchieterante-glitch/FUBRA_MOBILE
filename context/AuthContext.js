@@ -29,13 +29,23 @@ export function AuthProvider({ children }) {
     return userData;
   }
 
+  async function loginWithScan(code) {
+    // POST /api/auth/scan-login  -> { token, user }  (same shape as manual login)
+    const res = await client.post('/auth/scan-login', { code });
+    const { token, user: userData } = res.data;
+    await AsyncStorage.setItem('fu_ubra_token', token);
+    await AsyncStorage.setItem('fu_ubra_user', JSON.stringify(userData));
+    setUser(userData);
+    return userData;
+  }
+
   async function logout() {
     await AsyncStorage.multiRemove(['fu_ubra_token', 'fu_ubra_user']);
     setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithScan, logout }}>
       {children}
     </AuthContext.Provider>
   );
