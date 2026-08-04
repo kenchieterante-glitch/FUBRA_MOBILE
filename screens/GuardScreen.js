@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, Modal, TextInput,
@@ -18,6 +18,7 @@ export default function GuardScreen() {
   const [scannedId, setScannedId] = useState(null);
   const [keyItem, setKeyItem] = useState('');
   const [permission, requestPermission] = useCameraPermissions();
+  const scanLockRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -44,10 +45,14 @@ export default function GuardScreen() {
         return;
       }
     }
+    scanLockRef.current = false;
     setScanMode(mode);
   }
 
   async function handleScanned({ data }) {
+    if (scanLockRef.current) return;
+    scanLockRef.current = true;
+
     setScanMode(null);
     if (scanMode === 'borrow') {
       setScannedId(data);
@@ -122,11 +127,21 @@ export default function GuardScreen() {
       ))}
 
       <Modal visible={!!scanMode} animationType="slide">
-        <CameraView
-          style={{ flex: 1 }}
-          onBarcodeScanned={handleScanned}
-          barcodeScannerSettings={{ barcodeTypes: ['code128', 'code39', 'ean13', 'upc_a'] }}
-        />
+        {scanMode && (
+          <CameraView
+            style={{ flex: 1 }}
+            onBarcodeScanned={handleScanned}
+            barcodeScannerSettings={{ barcodeTypes: ['code128', 'code39', 'ean13', 'upc_a'] }}
+          />
+        )}
+        <View style={styles.frameOverlay} pointerEvents="none">
+          <View style={styles.frame}>
+            <View style={[styles.frameCorner, styles.frameCornerTL]} />
+            <View style={[styles.frameCorner, styles.frameCornerTR]} />
+            <View style={[styles.frameCorner, styles.frameCornerBL]} />
+            <View style={[styles.frameCorner, styles.frameCornerBR]} />
+          </View>
+        </View>
         <View style={styles.scannerHint}>
           <Text style={styles.scannerHintText}>Scan the campus ID barcode</Text>
         </View>
@@ -186,6 +201,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
   },
   scannerHintText: { color: colors.white, fontWeight: '600', fontSize: 13 },
+  frameOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  frame: { width: 280, height: 140 },
+  frameCorner: { position: 'absolute', width: 32, height: 32, borderColor: colors.white },
+  frameCornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 12 },
+  frameCornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 12 },
+  frameCornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 12 },
+  frameCornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 12 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
   sheet: { backgroundColor: colors.white, borderRadius: 12, padding: 16 },
   formTitle: { fontWeight: '700', color: colors.maroon, marginBottom: 10, fontSize: 14 },

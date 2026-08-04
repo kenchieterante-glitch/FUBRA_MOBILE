@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal,
+  ImageBackground,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
@@ -92,10 +93,16 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <ImageBackground
+      source={require('../assets/FUBackground.jpg')}
+      style={styles.bg}
+      resizeMode="cover"
     >
+      <View style={styles.overlay} />
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <View style={styles.logoCircle}>
         <Text style={styles.logoText}>FU</Text>
       </View>
@@ -186,14 +193,21 @@ export default function LoginScreen() {
           <Text style={{ color: colors.white, fontWeight: '600' }}>Cancel scan</Text>
         </TouchableOpacity>
       </Modal>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  bg: {
+    flex: 1,
+  },
+  overlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(122, 20, 23, 0.45)',
+  },
   container: {
     flex: 1,
-    backgroundColor: colors.maroon,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,

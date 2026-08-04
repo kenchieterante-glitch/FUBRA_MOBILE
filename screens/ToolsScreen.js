@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Alert, Modal, TextInput,
@@ -22,7 +22,10 @@ export default function ToolsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [scanMode, setScanMode] = useState(null); // 'borrow' | 'return' | null
   const [scanResult, setScanResult] = useState(null);
+  const [pendingScan, setPendingScan] = useState(null); // { mode, code, tool }
+  const [confirming, setConfirming] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const scanLockRef = useRef(false);
 
   const filterOptions = [{ value: null, label: 'All categories' }, ...categories.map((c) => ({ value: c, label: c }))];
   const visibleTools = tools.filter((t) => {
@@ -64,23 +67,44 @@ export default function ToolsScreen() {
         return;
       }
     }
+    scanLockRef.current = false;
     setScanMode(mode);
   }
 
   async function handleBarcodeScanned({ data }) {
+    // The camera keeps emitting detections for the same frame until it
+    // actually unmounts — ignore anything after the first hit for this session.
+    if (scanLockRef.current) return;
+    scanLockRef.current = true;
+
     const mode = scanMode;
     setScanMode(null);
 
     try {
+      const res = await client.post('/tools/scan-lookup', { code: data, mode });
+      setPendingScan({ mode, code: data, tool: res.data });
+    } catch (e) {
+      Alert.alert('Scan failed', e.message);
+    }
+  }
+
+  async function confirmPendingScan() {
+    if (!pendingScan) return;
+    const { mode, code } = pendingScan;
+    setConfirming(true);
+    try {
       const endpoint = mode === 'borrow' ? '/tools/scan-borrow' : '/tools/scan-return';
       const payload = mode === 'borrow'
-        ? { code: data, employee_id: user?.employee_id, borrower_name: user?.name, department: user?.department }
-        : { code: data };
+        ? { code, employee_id: user?.employee_id, borrower_name: user?.name, department: user?.department }
+        : { code };
       const res = await client.post(endpoint, payload);
       setScanResult(res.data);
+      setPendingScan(null);
       loadTools();
     } catch (e) {
       Alert.alert('Scan failed', e.message);
+    } finally {
+      setConfirming(false);
     }
   }
 
@@ -156,17 +180,73 @@ export default function ToolsScreen() {
       )}
 
       <Modal visible={!!scanMode} animationType="slide">
-        <CameraView
-          style={{ flex: 1 }}
-          onBarcodeScanned={handleBarcodeScanned}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        />
+        {scanMode && (
+          <CameraView
+            style={{ flex: 1 }}
+            onBarcodeScanned={handleBarcodeScanned}
+            barcodeScannerSettings={{
+              barcodeTypes: [
+                'qr', 'aztec', 'ean13', 'ean8', 'pdf417', 'upc_e',
+                'datamatrix', 'code39', 'code93', 'itf14', 'codabar', 'code128', 'upc_a',
+              ],
+            }}
+          />
+        )}
+        <View style={styles.frameOverlay} pointerEvents="none">
+          <View style={styles.frame}>
+            <View style={[styles.frameCorner, styles.frameCornerTL]} />
+            <View style={[styles.frameCorner, styles.frameCornerTR]} />
+            <View style={[styles.frameCorner, styles.frameCornerBL]} />
+            <View style={[styles.frameCorner, styles.frameCornerBR]} />
+          </View>
+        </View>
         <View style={styles.scannerHint}>
           <Text style={styles.scannerHintText}>Scan the tool's QR tag</Text>
         </View>
         <TouchableOpacity style={styles.closeScanner} onPress={() => setScanMode(null)}>
           <Text style={{ color: colors.white, fontWeight: '600' }}>Cancel scan</Text>
         </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={!!pendingScan} animationType="fade" transparent>
+        <View style={styles.backdrop}>
+          <View style={styles.sheet}>
+            <Text style={styles.formTitle}>
+              Confirm {pendingScan?.mode === 'borrow' ? 'borrow' : 'return'}
+            </Text>
+            <Text style={styles.confirmLine}>Tool: {pendingScan?.tool?.tool_name}</Text>
+            <Text style={styles.confirmLine}>Asset ID: {pendingScan?.tool?.asset_id}</Text>
+            {pendingScan?.tool?.condition ? (
+              <Text style={styles.confirmLine}>Condition: {pendingScan.tool.condition}</Text>
+            ) : null}
+            {pendingScan?.mode === 'return' && pendingScan?.tool?.current_borrower ? (
+              <Text style={styles.confirmLine}>Borrowed by: {pendingScan.tool.current_borrower}</Text>
+            ) : null}
+            <Text style={styles.confirmPrompt}>Is this the correct item?</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setPendingScan(null)}
+                disabled={confirming}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmBtn}
+                onPress={confirmPendingScan}
+                disabled={confirming}
+              >
+                {confirming ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.confirmBtnText}>
+                    Confirm {pendingScan?.mode === 'borrow' ? 'borrow' : 'return'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -220,4 +300,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
   },
   scannerHintText: { color: colors.white, fontWeight: '600', fontSize: 13 },
+  frameOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  frame: { width: 240, height: 240 },
+  frameCorner: { position: 'absolute', width: 32, height: 32, borderColor: colors.white },
+  frameCornerTL: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 12 },
+  frameCornerTR: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 12 },
+  frameCornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 12 },
+  frameCornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 12 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
+  sheet: { backgroundColor: colors.white, borderRadius: 12, padding: 16 },
+  formTitle: { fontWeight: '700', color: colors.maroon, marginBottom: 10, fontSize: 14 },
+  confirmLine: { fontSize: 13, color: colors.text, marginBottom: 4 },
+  confirmPrompt: { fontSize: 13, fontWeight: '600', color: colors.text, marginTop: 8, marginBottom: 14 },
+  cancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.border },
+  cancelBtnText: { color: colors.textMuted, fontWeight: '600' },
+  confirmBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 8, backgroundColor: colors.maroon },
+  confirmBtnText: { color: colors.white, fontWeight: '700' },
 });
