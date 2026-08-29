@@ -18,7 +18,12 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.fubra.mobile"
+      "package": "com.fubra.mobile",
+      "config": {
+        "googleMaps": {
+          "apiKey": "REPLACE_WITH_ANDROID_GOOGLE_MAPS_API_KEY"
+        }
+      }
     }
   }
 }

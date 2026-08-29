@@ -13,6 +13,11 @@ export default function PortalScreen() {
       </View>
       <Text style={styles.welcome}>{user?.name || 'Staff'}</Text>
       <Text style={styles.sub}>{user?.employee_id} · {user?.department}</Text>
+      {user?.role && (
+        <View style={styles.roleBadge}>
+          <Text style={styles.roleBadgeText}>{user.role}</Text>
+        </View>
+      )}
 
       {user?.is_guard && (
         <View style={styles.guardBadge}>
@@ -35,7 +40,12 @@ const styles = StyleSheet.create({
   },
   avatarInitial: { color: colors.white, fontSize: 28, fontWeight: '800' },
   welcome: { fontSize: 20, fontWeight: '800', color: colors.text, textAlign: 'center' },
-  sub: { fontSize: 13, color: colors.textMuted, marginTop: 4, marginBottom: 20, textAlign: 'center' },
+  sub: { fontSize: 13, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
+  roleBadge: {
+    alignSelf: 'center', backgroundColor: colors.infoBg, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 4, marginTop: 10, marginBottom: 20,
+  },
+  roleBadgeText: { color: colors.info, fontWeight: '700', fontSize: 12, textTransform: 'capitalize' },
   guardBadge: {
     alignSelf: 'center', backgroundColor: colors.maroonLight, borderColor: colors.maroon,
     borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 20,

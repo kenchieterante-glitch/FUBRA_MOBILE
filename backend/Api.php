@@ -17,6 +17,7 @@ namespace App\Controllers;
  *       $routes->post('tools/scan-return', 'Api::toolsScanReturn');
  *       $routes->get('vehicles', 'Api::vehicles');
  *       $routes->post('vehicles', 'Api::addVehicle');
+ *       $routes->get('vehicles/(:any)/location', 'Api::vehicleLocation/$1');
  *       $routes->get('trip-tickets/next', 'Api::nextTripTicket');
  *       $routes->post('trip-tickets/(:num)/scan-in', 'Api::tripScanIn/$1');
  *       $routes->post('trip-tickets/(:num)/scan-out', 'Api::tripScanOut/$1');
@@ -156,6 +157,29 @@ class Api extends BaseController
     {
         // TODO: log scan-out time for trip ticket $id
         return $this->response->setJSON(['message' => "Trip ticket {$id} scanned out"]);
+    }
+
+    public function vehicleLocation($plate)
+    {
+        // TODO: replace with a real call to the Traccar server once the Sinotrack
+        // ST-901L units are deployed, e.g.:
+        //   GET {TRACCAR_URL}/api/positions?deviceId={id mapped from $plate}
+        //   (HTTP Basic Auth with a Traccar account — see traccar.org/api-reference)
+        // Traccar reports speed in knots — convert with speed_kmh = position.speed * 1.852,
+        // and ignition/battery/power live under position.attributes.
+        $baseLat = 9.3097; // Foundation University, Dumaguete
+        $baseLng = 123.3080;
+        return $this->response->setJSON([
+            'plate'          => $plate,
+            'lat'            => $baseLat + (mt_rand(-50, 50) / 10000),
+            'lng'            => $baseLng + (mt_rand(-50, 50) / 10000),
+            'speed_kmh'      => mt_rand(0, 60),
+            'course'         => mt_rand(0, 359),
+            'ignition'       => (bool) mt_rand(0, 1),
+            'battery_level'  => mt_rand(60, 100),
+            'external_power' => true,
+            'last_update'    => date('c'),
+        ]);
     }
 
     // ---------- SAFETY ----------

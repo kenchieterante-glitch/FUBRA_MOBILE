@@ -81,7 +81,7 @@ export default function ToolsScreen() {
     setScanMode(null);
 
     try {
-      const res = await client.post('/tools/scan-lookup', { code: data, mode });
+      const res = await client.get(`/tools/lookup/${encodeURIComponent(data)}`);
       setPendingScan({ mode, code: data, tool: res.data });
     } catch (e) {
       Alert.alert('Scan failed', e.message);
@@ -219,8 +219,14 @@ export default function ToolsScreen() {
             {pendingScan?.tool?.condition ? (
               <Text style={styles.confirmLine}>Condition: {pendingScan.tool.condition}</Text>
             ) : null}
-            {pendingScan?.mode === 'return' && pendingScan?.tool?.current_borrower ? (
-              <Text style={styles.confirmLine}>Borrowed by: {pendingScan.tool.current_borrower}</Text>
+            {pendingScan?.tool?.status ? (
+              <Text style={styles.confirmLine}>Status: {pendingScan.tool.status}</Text>
+            ) : null}
+            {pendingScan?.mode === 'borrow' && pendingScan?.tool?.available === false ? (
+              <Text style={styles.confirmWarning}>This tool isn't marked Available right now.</Text>
+            ) : null}
+            {pendingScan?.mode === 'return' && pendingScan?.tool?.available === true ? (
+              <Text style={styles.confirmWarning}>This tool isn't currently marked as borrowed.</Text>
             ) : null}
             <Text style={styles.confirmPrompt}>Is this the correct item?</Text>
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -315,6 +321,7 @@ const styles = StyleSheet.create({
   formTitle: { fontWeight: '700', color: colors.maroon, marginBottom: 10, fontSize: 14 },
   confirmLine: { fontSize: 13, color: colors.text, marginBottom: 4 },
   confirmPrompt: { fontSize: 13, fontWeight: '600', color: colors.text, marginTop: 8, marginBottom: 14 },
+  confirmWarning: { fontSize: 12, fontWeight: '600', color: colors.danger, marginTop: 6 },
   cancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.border },
   cancelBtnText: { color: colors.textMuted, fontWeight: '600' },
   confirmBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 8, backgroundColor: colors.maroon },

@@ -46,13 +46,16 @@ const TAB_COMPONENTS = {
   Profile: PortalScreen,
 };
 
-// A single-position account (Janitorial/Maintenance/Tools/Inspection) only ever
-// needs its own module — everything else on the portal is someone else's job.
+// A single-position account (Janitorial/Maintenance/Tools) only ever needs
+// its own module — everything else on the portal is someone else's job.
+// The 'tools' role is the "facilities" login in the app; 'administrator'
+// is intentionally absent here so it falls through to full access below.
+// Only these roles (plus administrator) can sign in at all — enforced
+// server-side in Api::assertRoleAllowed().
 const ROLE_TAB_MAP = {
   janitorial: 'Janitorial',
   maintenance: 'Safety',
   tools: 'Tools',
-  inspection: 'Vehicles',
 };
 
 const tabScreenOptions = ({ route }) => ({

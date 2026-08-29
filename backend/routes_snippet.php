@@ -10,6 +10,7 @@
 
     $routes->get('vehicles', 'Api::vehicles');
     $routes->post('vehicles', 'Api::addVehicle');
+    $routes->get('vehicles/(:any)/location', 'Api::vehicleLocation/$1');
     $routes->get('trip-tickets/next', 'Api::nextTripTicket');
     $routes->post('trip-tickets/(:num)/scan-in', 'Api::tripScanIn/$1');
     $routes->post('trip-tickets/(:num)/scan-out', 'Api::tripScanOut/$1');

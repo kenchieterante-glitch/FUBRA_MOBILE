@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import StatCard from '../components/StatCard';
 import Badge from '../components/Badge';
 import PickerModal from '../components/PickerModal';
+import VehicleTrackingModal from '../components/VehicleTrackingModal';
 import colors from '../theme/colors';
 
 export default function VehicleScreen() {
@@ -23,6 +24,7 @@ export default function VehicleScreen() {
   const [pickerOpen, setPickerOpen] = useState(null); // 'driver' | 'department' | null
   const [scanMode, setScanMode] = useState(null); // 'in' | 'out' | null
   const [permission, requestPermission] = useCameraPermissions();
+  const [trackingVehicle, setTrackingVehicle] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -108,6 +110,9 @@ export default function VehicleScreen() {
           <Text style={styles.vehicleMeta}>{v.plate} · {v.type}</Text>
           <Text style={styles.vehicleMeta}>Driver: {v.driver || '—'} · {v.department || '—'}</Text>
           <Text style={styles.vehicleMeta}>GPS: {v.gps_status} · Inspection: {v.inspection_status}</Text>
+          <TouchableOpacity style={styles.trackBtn} onPress={() => setTrackingVehicle(v)}>
+            <Text style={styles.trackBtnText}>📍 Track vehicle</Text>
+          </TouchableOpacity>
         </View>
       ))}
 
@@ -190,6 +195,12 @@ export default function VehicleScreen() {
           <Text style={{ color: colors.white, fontWeight: '600' }}>Cancel scan</Text>
         </TouchableOpacity>
       </Modal>
+
+      <VehicleTrackingModal
+        visible={!!trackingVehicle}
+        vehicle={trackingVehicle}
+        onClose={() => setTrackingVehicle(null)}
+      />
     </ScrollView>
   );
 }
@@ -220,6 +231,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.maroon,
   },
   ticketId: { color: colors.maroon, fontWeight: '700', marginBottom: 4 },
+  trackBtn: {
+    alignSelf: 'flex-start', backgroundColor: colors.infoBg, borderRadius: 8,
+    paddingVertical: 6, paddingHorizontal: 10, marginTop: 8,
+  },
+  trackBtnText: { color: colors.info, fontSize: 12, fontWeight: '700' },
   scanIn: { flex: 1, backgroundColor: colors.successBg, borderRadius: 8, padding: 10, alignItems: 'center' },
   scanInText: { color: colors.success, fontWeight: '700' },
   scanOut: { flex: 1, backgroundColor: colors.dangerBg, borderRadius: 8, padding: 10, alignItems: 'center' },
