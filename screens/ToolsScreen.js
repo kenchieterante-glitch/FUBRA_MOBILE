@@ -1,21 +1,52 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert, Modal, TextInput,
+  View, Text, StyleSheet, SectionList, ScrollView, TouchableOpacity,
+  ActivityIndicator, RefreshControl, Alert, Modal,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Ionicons } from '@expo/vector-icons';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import Badge from '../components/Badge';
-import PickerModal from '../components/PickerModal';
-import colors from '../theme/colors';
+import StatCard from '../components/StatCard';
+import ListControls from '../components/ListControls';
+import ToolHistoryModal from '../components/ToolHistoryModal';
+
+const ATTENTION_STATUSES = ['Maintenance', 'Disposal'];
+
+const SORT_OPTIONS = [
+  { value: 'name_asc', label: 'Name (A–Z)' },
+  { value: 'name_desc', label: 'Name (Z–A)' },
+  { value: 'status', label: 'Status' },
+];
+
+const keyExtractor = (item) => item.asset_id;
+
+// Memoized so typing in search / tapping a filter only re-renders rows whose
+// item actually changed, instead of all of them on every state change.
+const ToolRow = React.memo(function ToolRow({ item, styles, onPress }) {
+  return (
+    <TouchableOpacity style={styles.row} onPress={() => onPress(item)}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.toolName}>{item.tool_name}</Text>
+        <Text style={styles.toolMeta}>{item.asset_id} · {item.condition} · Qty {item.qty}</Text>
+        {item.stock_tracked && item.borrowed_qty > 0 && (
+          <Text style={styles.toolBorrowedHint}>{item.borrowed_qty} currently borrowed</Text>
+        )}
+      </View>
+      <Badge status={item.status} />
+    </TouchableOpacity>
+  );
+});
 
 export default function ToolsScreen() {
   const { user } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
   const [categories, setCategories] = useState([]);
   const [category, setCategory] = useState(null);
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState(null); // 'Available' | 'Borrowed' | 'Attention' | null
+  const [sortBy, setSortBy] = useState('name_asc');
   const [search, setSearch] = useState('');
   const [tools, setTools] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,16 +54,85 @@ export default function ToolsScreen() {
   const [scanMode, setScanMode] = useState(null); // 'borrow' | 'return' | null
   const [scanResult, setScanResult] = useState(null);
   const [pendingScan, setPendingScan] = useState(null); // { mode, code, tool }
+  const [borrowQty, setBorrowQty] = useState(1);
+  const [returnQty, setReturnQty] = useState(1);
   const [confirming, setConfirming] = useState(false);
+  const [historyTool, setHistoryTool] = useState(null);
   const [permission, requestPermission] = useCameraPermissions();
   const scanLockRef = useRef(false);
 
   const filterOptions = [{ value: null, label: 'All categories' }, ...categories.map((c) => ({ value: c, label: c }))];
-  const visibleTools = tools.filter((t) => {
+
+  // Dashboard totals always reflect the full inventory, independent of
+  // whatever search/category/status filter is currently narrowing the list
+  // below — that's what makes it read as an at-a-glance overview.
+  const { totalCount, availableCount, borrowedCount, attentionCount } = useMemo(() => ({
+    totalCount: tools.length,
+    availableCount: tools.filter((t) => t.status === 'Available').length,
+    // A stock-tracked item can have some units out on loan while still reading
+    // "Available" overall (stock remains) — count those alongside fully
+    // checked-out items so this stat reflects every active borrow, not just
+    // ones that flipped the whole item's status.
+    borrowedCount: tools.filter((t) => t.status === 'Borrowed' || t.borrowed_qty > 0).length,
+    attentionCount: tools.filter((t) => ATTENTION_STATUSES.includes(t.status)).length,
+  }), [tools]);
+
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    tools.forEach((t) => {
+      const cat = t.category || 'Uncategorized';
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return counts;
+  }, [tools]);
+
+  // Memoized so `sections` below (and therefore the whole SectionList) only
+  // gets a new array when a filter/search/sort/data input actually changes.
+  const visibleTools = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return t.tool_name.toLowerCase().includes(q) || t.asset_id.toLowerCase().includes(q);
-  });
+    return tools
+      .filter((t) => !category || t.category === category)
+      .filter((t) => {
+        if (!statusFilter) return true;
+        if (statusFilter === 'Attention') return ATTENTION_STATUSES.includes(t.status);
+        if (statusFilter === 'Borrowed') return t.status === 'Borrowed' || t.borrowed_qty > 0;
+        return t.status === statusFilter;
+      })
+      .filter((t) => !q || t.tool_name.toLowerCase().includes(q) || t.asset_id.toLowerCase().includes(q))
+      .sort((a, b) => {
+        if (sortBy === 'name_desc') return b.tool_name.localeCompare(a.tool_name);
+        if (sortBy === 'status') return a.status.localeCompare(b.status) || a.tool_name.localeCompare(b.tool_name);
+        return a.tool_name.localeCompare(b.tool_name);
+      });
+  }, [tools, category, statusFilter, search, sortBy]);
+
+  // Group into one section per category so the list reads as an organized
+  // catalog (Power Tools, Consumable, ...) instead of one long flat list.
+  const sections = useMemo(() => {
+    const byCategory = {};
+    visibleTools.forEach((t) => {
+      const cat = t.category || 'Uncategorized';
+      if (!byCategory[cat]) byCategory[cat] = [];
+      byCategory[cat].push(t);
+    });
+    return Object.keys(byCategory)
+      .sort((a, b) => a.localeCompare(b))
+      .map((cat) => ({ title: cat, data: byCategory[cat] }));
+  }, [visibleTools]);
+
+  const renderItem = useCallback(
+    ({ item }) => <ToolRow item={item} styles={styles} onPress={setHistoryTool} />,
+    [styles],
+  );
+
+  const renderSectionHeader = useCallback(({ section }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionHeaderText}>{section.title}</Text>
+      <View style={styles.sectionHeaderCount}>
+        <Text style={styles.sectionHeaderCountText}>{section.data.length}</Text>
+      </View>
+    </View>
+  ), [styles]);
 
   useEffect(() => {
     (async () => {
@@ -47,7 +147,10 @@ export default function ToolsScreen() {
 
   const loadTools = useCallback(async () => {
     try {
-      const res = await client.get('/tools', { params: category ? { category } : {} });
+      // Fetch the whole inventory once — category/status filtering happens
+      // client-side so the dashboard totals and category chips stay accurate
+      // no matter what the list below is currently narrowed to.
+      const res = await client.get('/tools');
       setTools(res.data.tools || []);
     } catch (e) {
       Alert.alert('Error loading tools', e.message);
@@ -55,7 +158,7 @@ export default function ToolsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [category]);
+  }, []);
 
   useEffect(() => { setLoading(true); loadTools(); }, [loadTools]);
 
@@ -83,20 +186,54 @@ export default function ToolsScreen() {
     try {
       const res = await client.get(`/tools/lookup/${encodeURIComponent(data)}`);
       setPendingScan({ mode, code: data, tool: res.data });
+      setBorrowQty(1);
+      // Default to returning everything still outstanding on the record a
+      // return scan would target — the user can dial it down for a partial return.
+      setReturnQty(Math.max(1, res.data?.returnable_qty ?? res.data?.borrowed_qty ?? 1));
     } catch (e) {
       Alert.alert('Scan failed', e.message);
     }
   }
 
+  function adjustBorrowQty(delta) {
+    const max = pendingScan?.tool?.qty ?? 1;
+    setBorrowQty((q) => Math.min(Math.max(q + delta, 1), max));
+  }
+
+  function adjustReturnQty(delta) {
+    const max = Math.max(1, pendingScan?.tool?.returnable_qty ?? pendingScan?.tool?.borrowed_qty ?? 1);
+    setReturnQty((q) => Math.min(Math.max(q + delta, 1), max));
+  }
+
+  // Whether the scanned item is actually eligible for the action being
+  // confirmed — a stock-tracked item stays "Available" while some units
+  // remain, so eligibility for return hinges on borrowed_qty, not status.
+  function isScanEligible(scan) {
+    if (!scan?.tool) return false;
+    if (scan.mode === 'borrow') return scan.tool.available === true;
+    // Consumables are used up when borrowed, not checked out — there's
+    // nothing to bring back.
+    if (scan.tool.category === 'Consumable') return false;
+    return scan.tool.stock_tracked ? scan.tool.returnable_qty > 0 : scan.tool.available === false;
+  }
+
   async function confirmPendingScan() {
     if (!pendingScan) return;
-    const { mode, code } = pendingScan;
+    const { mode, code, tool } = pendingScan;
     setConfirming(true);
     try {
       const endpoint = mode === 'borrow' ? '/tools/scan-borrow' : '/tools/scan-return';
       const payload = mode === 'borrow'
-        ? { code, employee_id: user?.employee_id, borrower_name: user?.name, department: user?.department }
-        : { code };
+        ? {
+          code,
+          employee_id: user?.employee_id,
+          borrower_name: user?.name,
+          department: user?.department,
+          quantity: borrowQty,
+        }
+        : tool?.stock_tracked
+          ? { code, quantity: returnQty }
+          : { code };
       const res = await client.post(endpoint, payload);
       setScanResult(res.data);
       setPendingScan(null);
@@ -110,32 +247,83 @@ export default function ToolsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.searchRow}>
-        <TouchableOpacity style={[styles.filterBtn, category && styles.filterBtnActive]} onPress={() => setFilterOpen(true)}>
-          <Ionicons name="filter" size={16} color={category ? colors.white : colors.maroon} />
-          <Text style={[styles.filterBtnText, category && styles.filterBtnTextActive]} numberOfLines={1}>
-            {category || 'Filter'}
-          </Text>
-        </TouchableOpacity>
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={16} color={colors.textMuted} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search tools..."
-            placeholderTextColor={colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+        <View style={styles.statRow}>
+          <StatCard
+            value={totalCount}
+            label="Total tools"
+            active={!statusFilter}
+            onPress={() => setStatusFilter(null)}
+          />
+          <StatCard
+            value={availableCount}
+            label="Available"
+            color={colors.success}
+            active={statusFilter === 'Available'}
+            onPress={() => setStatusFilter((f) => (f === 'Available' ? null : 'Available'))}
+          />
+          <StatCard
+            value={borrowedCount}
+            label="Borrowed"
+            color={colors.warning}
+            active={statusFilter === 'Borrowed'}
+            onPress={() => setStatusFilter((f) => (f === 'Borrowed' ? null : 'Borrowed'))}
+          />
+          <StatCard
+            value={attentionCount}
+            label="Needs attention"
+            color={colors.danger}
+            active={statusFilter === 'Attention'}
+            onPress={() => setStatusFilter((f) => (f === 'Attention' ? null : 'Attention'))}
           />
         </View>
-      </View>
 
-      <PickerModal
-        visible={filterOpen}
-        title="Filter by category"
-        options={filterOptions}
-        onClose={() => setFilterOpen(false)}
-        onSelect={(item) => { setCategory(item.value); setFilterOpen(false); }}
-      />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoryScroll}
+          contentContainerStyle={styles.categoryScrollContent}
+        >
+          {categories.map((c) => {
+            const active = category === c;
+            return (
+              <TouchableOpacity
+                key={c}
+                style={[styles.categoryChip, active && styles.categoryChipActive]}
+                onPress={() => setCategory((prev) => (prev === c ? null : c))}
+              >
+                <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
+                  {c}
+                </Text>
+                <View style={[styles.categoryChipCount, active && styles.categoryChipCountActive]}>
+                  <Text style={[styles.categoryChipCountText, active && styles.categoryChipCountTextActive]}>
+                    {categoryCounts[c] || 0}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <ListControls
+          search={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search tools..."
+          filter={{
+            value: category,
+            options: filterOptions,
+            onChange: setCategory,
+            title: 'Filter by category',
+            label: 'All categories',
+          }}
+          sort={{
+            value: sortBy,
+            options: SORT_OPTIONS,
+            onChange: setSortBy,
+            title: 'Sort by',
+          }}
+        />
+      </View>
 
       <View style={styles.actionRow}>
         <TouchableOpacity style={styles.scanBtn} onPress={() => openScanner('borrow')}>
@@ -149,21 +337,21 @@ export default function ToolsScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={colors.maroon} />
       ) : (
-        <FlatList
-          data={visibleTools}
-          keyExtractor={(item) => item.asset_id}
+        <SectionList
+          sections={sections}
+          keyExtractor={keyExtractor}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTools(); }} />}
           contentContainerStyle={{ padding: 16 }}
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.toolName}>{item.tool_name}</Text>
-                <Text style={styles.toolMeta}>{item.asset_id} · {item.condition} · Qty {item.qty}</Text>
-              </View>
-              <Badge status={item.status} />
-            </View>
+          stickySectionHeadersEnabled
+          renderSectionHeader={renderSectionHeader}
+          renderItem={renderItem}
+          ListEmptyComponent={(
+            <Text style={styles.empty}>
+              {search.trim() || category || statusFilter
+                ? 'No tools match your current search/filters.'
+                : 'No tools registered yet.'}
+            </Text>
           )}
-          ListEmptyComponent={<Text style={styles.empty}>{search.trim() ? 'No tools match your search.' : 'No tools registered in this category yet.'}</Text>}
         />
       )}
 
@@ -172,6 +360,15 @@ export default function ToolsScreen() {
           <Text style={styles.resultTitle}>✅ Scan result — {scanResult.action}</Text>
           <Text style={styles.resultLine}>Borrower: {scanResult.borrower_name}</Text>
           <Text style={styles.resultLine}>Tool: {scanResult.tool_name} ({scanResult.asset_id})</Text>
+          {scanResult.quantity > 1 && (
+            <Text style={styles.resultLine}>Quantity: {scanResult.quantity}</Text>
+          )}
+          {scanResult.consumed && (
+            <Text style={styles.resultLine}>Status: Consumed — this item is used up and can't be returned.</Text>
+          )}
+          {scanResult.partial && (
+            <Text style={styles.resultLine}>Partial return — some units are still out on this record.</Text>
+          )}
           <Text style={styles.resultLine}>Time: {scanResult.timestamp}</Text>
           <TouchableOpacity onPress={() => setScanResult(null)}>
             <Text style={styles.dismiss}>Dismiss</Text>
@@ -222,73 +419,156 @@ export default function ToolsScreen() {
             {pendingScan?.tool?.status ? (
               <Text style={styles.confirmLine}>Status: {pendingScan.tool.status}</Text>
             ) : null}
-            {pendingScan?.mode === 'borrow' && pendingScan?.tool?.available === false ? (
-              <Text style={styles.confirmWarning}>This tool isn't marked Available right now.</Text>
+            {pendingScan?.tool && !isScanEligible(pendingScan) ? (
+              <Text style={styles.confirmWarning}>
+                {pendingScan.mode === 'borrow'
+                  ? "This tool isn't marked Available right now."
+                  : pendingScan.tool.category === 'Consumable'
+                    ? "Consumables are used up when borrowed — they can't be returned."
+                    : "This tool isn't currently marked as borrowed."}
+              </Text>
             ) : null}
-            {pendingScan?.mode === 'return' && pendingScan?.tool?.available === true ? (
-              <Text style={styles.confirmWarning}>This tool isn't currently marked as borrowed.</Text>
+
+            {pendingScan?.mode === 'return' && pendingScan?.tool?.stock_tracked && pendingScan.tool.returnable_qty > 0 ? (
+              <View style={styles.qtyRow}>
+                <View>
+                  <Text style={styles.confirmLine}>Quantity to return</Text>
+                  <Text style={styles.qtyHint}>{pendingScan.tool.returnable_qty} currently borrowed on this record</Text>
+                </View>
+                <View style={styles.qtyStepper}>
+                  <TouchableOpacity
+                    style={[styles.qtyBtn, returnQty <= 1 && styles.qtyBtnDisabled]}
+                    onPress={() => adjustReturnQty(-1)}
+                    disabled={returnQty <= 1}
+                  >
+                    <Text style={styles.qtyBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.qtyValue}>{returnQty}</Text>
+                  <TouchableOpacity
+                    style={[styles.qtyBtn, returnQty >= pendingScan.tool.returnable_qty && styles.qtyBtnDisabled]}
+                    onPress={() => adjustReturnQty(1)}
+                    disabled={returnQty >= pendingScan.tool.returnable_qty}
+                  >
+                    <Text style={styles.qtyBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             ) : null}
-            <Text style={styles.confirmPrompt}>Is this the correct item?</Text>
+
+            {pendingScan?.mode === 'borrow' && pendingScan?.tool && isScanEligible(pendingScan) ? (
+              <View style={styles.qtyRow}>
+                <View>
+                  <Text style={styles.confirmLine}>Quantity to borrow</Text>
+                  <Text style={styles.qtyHint}>
+                    {pendingScan.tool.stock_tracked
+                      ? `${pendingScan.tool.qty} in stock`
+                      : 'Single-unit item'}
+                  </Text>
+                </View>
+                <View style={styles.qtyStepper}>
+                  <TouchableOpacity
+                    style={[styles.qtyBtn, borrowQty <= 1 && styles.qtyBtnDisabled]}
+                    onPress={() => adjustBorrowQty(-1)}
+                    disabled={borrowQty <= 1}
+                  >
+                    <Text style={styles.qtyBtnText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.qtyValue}>{borrowQty}</Text>
+                  <TouchableOpacity
+                    style={[styles.qtyBtn, borrowQty >= pendingScan.tool.qty && styles.qtyBtnDisabled]}
+                    onPress={() => adjustBorrowQty(1)}
+                    disabled={borrowQty >= pendingScan.tool.qty}
+                  >
+                    <Text style={styles.qtyBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            {pendingScan?.tool && isScanEligible(pendingScan) ? (
+              <Text style={styles.confirmPrompt}>Is this the correct item?</Text>
+            ) : null}
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TouchableOpacity
-                style={styles.cancelBtn}
+                style={[styles.cancelBtn, !(pendingScan?.tool && isScanEligible(pendingScan)) && { flex: 1 }]}
                 onPress={() => setPendingScan(null)}
                 disabled={confirming}
               >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>
+                  {pendingScan?.tool && isScanEligible(pendingScan) ? 'Cancel' : 'Close'}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmBtn}
-                onPress={confirmPendingScan}
-                disabled={confirming}
-              >
-                {confirming ? (
-                  <ActivityIndicator color={colors.white} />
-                ) : (
-                  <Text style={styles.confirmBtnText}>
-                    Confirm {pendingScan?.mode === 'borrow' ? 'borrow' : 'return'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+              {pendingScan?.tool && isScanEligible(pendingScan) ? (
+                <TouchableOpacity
+                  style={styles.confirmBtn}
+                  onPress={confirmPendingScan}
+                  disabled={confirming}
+                >
+                  {confirming ? (
+                    <ActivityIndicator color={colors.white} />
+                  ) : (
+                    <Text style={styles.confirmBtnText}>
+                      Confirm {pendingScan?.mode === 'borrow' ? 'borrow' : 'return'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
         </View>
       </Modal>
+
+      <ToolHistoryModal
+        visible={!!historyTool}
+        tool={historyTool}
+        onClose={() => setHistoryTool(null)}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.white,
-    paddingHorizontal: 12, paddingTop: 12, paddingBottom: 10,
+  statRow: { flexDirection: 'row', marginBottom: 12 },
+  categoryScroll: { marginBottom: 12 },
+  categoryScrollContent: { gap: 8, paddingRight: 4 },
+  categoryChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  filterBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 12,
-    borderRadius: 20, backgroundColor: colors.pink, borderWidth: 1, borderColor: colors.maroon,
-    maxWidth: 130,
+  categoryChipActive: { backgroundColor: colors.maroon, borderColor: colors.maroon },
+  categoryChipText: { fontSize: 12, fontWeight: '600', color: colors.text },
+  categoryChipTextActive: { color: colors.white },
+  categoryChipCount: {
+    backgroundColor: colors.bg, borderRadius: 10, paddingHorizontal: 6, minWidth: 20, alignItems: 'center',
   },
-  filterBtnActive: { backgroundColor: colors.maroon, borderColor: colors.maroon },
-  filterBtnText: { color: colors.maroon, fontWeight: '600', fontSize: 12 },
-  filterBtnTextActive: { color: colors.white },
-  searchBox: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.bg, borderRadius: 20, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: 12, paddingVertical: 9,
-  },
-  searchInput: { flex: 1, fontSize: 13, color: colors.text, padding: 0 },
-  actionRow: { flexDirection: 'row', gap: 10, padding: 16, backgroundColor: colors.white },
+  categoryChipCountActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  categoryChipCountText: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
+  categoryChipCountTextActive: { color: colors.white },
+  actionRow: { flexDirection: 'row', gap: 10, padding: 16, backgroundColor: colors.surface },
   scanBtn: { flex: 1, backgroundColor: colors.maroon, borderRadius: 8, padding: 12, alignItems: 'center' },
-  scanBtnOutline: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.maroon },
+  scanBtnOutline: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.maroon },
   scanBtnText: { color: colors.white, fontWeight: '600', fontSize: 13 },
   scanBtnOutlineText: { color: colors.maroon },
+  sectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.bg, paddingVertical: 8, marginBottom: 4,
+  },
+  sectionHeaderText: {
+    fontSize: 12, fontWeight: '700', color: colors.maroon,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  sectionHeaderCount: {
+    backgroundColor: colors.maroonLight, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
+  },
+  sectionHeaderCountText: { fontSize: 11, fontWeight: '700', color: colors.maroon },
   row: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
     borderRadius: 10, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border,
   },
   toolName: { fontSize: 14, fontWeight: '600', color: colors.text },
   toolMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  toolBorrowedHint: { fontSize: 11, color: colors.warning, marginTop: 2, fontWeight: '600' },
   empty: { textAlign: 'center', color: colors.textMuted, marginTop: 30 },
   resultBox: {
     margin: 16, padding: 14, borderRadius: 10, borderWidth: 1,
@@ -317,11 +597,24 @@ const styles = StyleSheet.create({
   frameCornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 12 },
   frameCornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 12 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  sheet: { backgroundColor: colors.white, borderRadius: 12, padding: 16 },
+  sheet: { backgroundColor: colors.surface, borderRadius: 12, padding: 16 },
   formTitle: { fontWeight: '700', color: colors.maroon, marginBottom: 10, fontSize: 14 },
   confirmLine: { fontSize: 13, color: colors.text, marginBottom: 4 },
   confirmPrompt: { fontSize: 13, fontWeight: '600', color: colors.text, marginTop: 8, marginBottom: 14 },
   confirmWarning: { fontSize: 12, fontWeight: '600', color: colors.danger, marginTop: 6 },
+  qtyRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  qtyStepper: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  qtyBtn: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.maroon,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  qtyBtnDisabled: { backgroundColor: colors.border },
+  qtyBtnText: { color: colors.white, fontSize: 16, fontWeight: '700', lineHeight: 18 },
+  qtyValue: { fontSize: 15, fontWeight: '700', color: colors.text, minWidth: 24, textAlign: 'center' },
+  qtyHint: { fontSize: 11, color: colors.textMuted },
   cancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.border },
   cancelBtnText: { color: colors.textMuted, fontWeight: '600' },
   confirmBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 8, backgroundColor: colors.maroon },

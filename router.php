@@ -55,8 +55,8 @@ if ($path === '/api/safety/buildings') {
 if ($path === '/api/janitorial/zones') {
     echo json_encode([
         'zones' => [
-            ['id' => 1, 'name' => 'Admin CR', 'status' => 'done'],
-            ['id' => 2, 'name' => 'CCS CR 1F', 'status' => 'pending'],
+            ['id' => 1, 'name' => 'Admin CR', 'department' => 'Admin', 'floor' => 'Ground Floor', 'status' => 'done'],
+            ['id' => 2, 'name' => 'CCS CR 1F', 'department' => 'CCS', 'floor' => '1st Floor', 'status' => 'pending'],
         ],
     ]);
     exit;

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal,
-  ImageBackground,
+  ImageBackground, Image,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useAuth } from '../context/AuthContext';
@@ -103,17 +103,15 @@ export default function LoginScreen() {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-      <View style={styles.logoCircle}>
-        <Text style={styles.logoText}>FU</Text>
-      </View>
-      <Text style={styles.title}>FU-UBRA</Text>
+      <Image source={require('../assets/fags-logo.png')} style={styles.logo} />
+      <Text style={styles.title}>UBRA</Text>
       <Text style={styles.subtitle}>Foundation University</Text>
 
       <View style={styles.form}>
         <Text style={styles.label}>Employee ID</Text>
         <TextInput
           style={styles.input}
-          placeholder="EMP-2024-089"
+          placeholder="20241690"
           placeholderTextColor="#c9a9aa"
           autoCapitalize="characters"
           value={employeeId}
@@ -212,18 +210,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  logoCircle: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.white,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
-  },
-  logoText: { color: colors.maroon, fontWeight: '800', fontSize: 22 },
+  // Bigger than the old 72px "FU" badge — the seal has fine ring text that
+  // isn't legible any smaller.
+  logo: { width: 112, height: 112, marginBottom: 12 },
   title: { color: colors.white, fontSize: 24, fontWeight: '800' },
   subtitle: { color: '#e9c8c9', fontSize: 13, marginBottom: 28 },
   form: { width: '100%', maxWidth: 360 },
   label: { color: '#f0d5d6', fontSize: 12, marginBottom: 6, marginTop: 14 },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 8, padding: 12, color: colors.white, fontSize: 15,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 8, padding: 12, color: '#000', fontSize: 15,
   },
   button: {
     backgroundColor: colors.white, borderRadius: 8, padding: 14,

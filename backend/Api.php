@@ -229,14 +229,14 @@ class Api extends BaseController
         // TODO: $model = new \App\Models\JanitorialModel(); return $model->zonesWithStatus();
         return $this->response->setJSON([
             'zones' => [
-                ['id' => 1, 'name' => 'Admin CR', 'status' => 'done'],
-                ['id' => 2, 'name' => 'CCS CR 1F', 'status' => 'pending'],
-                ['id' => 3, 'name' => 'CCS CR 2F', 'status' => 'pending'],
-                ['id' => 4, 'name' => 'Main lobby', 'status' => 'done'],
-                ['id' => 5, 'name' => 'Gym CR', 'status' => 'missed'],
-                ['id' => 6, 'name' => 'Library CR', 'status' => 'done'],
-                ['id' => 7, 'name' => 'Canteen', 'status' => 'pending'],
-                ['id' => 8, 'name' => 'Nursing CR', 'status' => 'done'],
+                ['id' => 1, 'name' => 'Admin CR', 'department' => 'Admin', 'floor' => 'Ground Floor', 'status' => 'done'],
+                ['id' => 2, 'name' => 'CCS CR 1F', 'department' => 'CCS', 'floor' => '1st Floor', 'status' => 'pending'],
+                ['id' => 3, 'name' => 'CCS CR 2F', 'department' => 'CCS', 'floor' => '2nd Floor', 'status' => 'pending'],
+                ['id' => 4, 'name' => 'Main lobby', 'department' => 'General', 'floor' => 'Ground Floor', 'status' => 'done'],
+                ['id' => 5, 'name' => 'Gym CR', 'department' => 'Athletics', 'floor' => 'Ground Floor', 'status' => 'missed'],
+                ['id' => 6, 'name' => 'Library CR', 'department' => 'Library', 'floor' => '1st Floor', 'status' => 'done'],
+                ['id' => 7, 'name' => 'Canteen', 'department' => 'General', 'floor' => 'Ground Floor', 'status' => 'pending'],
+                ['id' => 8, 'name' => 'Nursing CR', 'department' => 'Health Services', 'floor' => 'Ground Floor', 'status' => 'done'],
             ],
         ]);
     }

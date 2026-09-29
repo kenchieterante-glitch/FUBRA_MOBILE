@@ -1,20 +1,27 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import colors from '../theme/colors';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 
-export default function StatCard({ value, label, color = colors.maroon }) {
+export default function StatCard({ value, label, color, onPress, active }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
+  const Wrapper = onPress ? TouchableOpacity : View;
   return (
-    <View style={styles.card}>
-      <Text style={[styles.value, { color }]}>{value}</Text>
+    <Wrapper
+      style={[styles.card, active && { borderColor: color || colors.maroon, backgroundColor: colors.maroonLight }]}
+      onPress={onPress}
+      activeOpacity={onPress ? 0.7 : 1}
+    >
+      <Text style={[styles.value, { color: color || colors.maroon }]}>{value}</Text>
       <Text style={styles.label}>{label}</Text>
-    </View>
+    </Wrapper>
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   card: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',

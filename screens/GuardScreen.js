@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert, Modal, TextInput,
@@ -6,11 +6,30 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import client from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import Badge from '../components/Badge';
-import colors from '../theme/colors';
+import ListControls from '../components/ListControls';
+
+const STATUS_OPTIONS = [
+  { value: null, label: 'All statuses' },
+  { value: 'active', label: 'Active' },
+  { value: 'returned', label: 'Returned' },
+];
+
+const SORT_OPTIONS = [
+  { value: 'recent', label: 'Most recent' },
+  { value: 'name_asc', label: 'Name (A–Z)' },
+  { value: 'name_desc', label: 'Name (Z–A)' },
+  { value: 'status', label: 'Status' },
+];
 
 export default function GuardScreen() {
   const { user } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => getStyles(colors), [colors]);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState(null);
+  const [sortBy, setSortBy] = useState('recent');
   const [keylog, setKeylog] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +106,27 @@ export default function GuardScreen() {
 
   if (loading) return <ActivityIndicator style={{ marginTop: 40 }} color={colors.maroon} />;
 
+  const visibleKeylog = keylog
+    .filter((log) => !statusFilter || (log.status || '').toLowerCase() === statusFilter)
+    .filter((log) => {
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (log.name || '').toLowerCase().includes(q) ||
+        (log.department || '').toLowerCase().includes(q) ||
+        (log.key_borrowed || '').toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      // 'recent' keeps the order the API already returns them in — newest
+      // scan-borrow/scan-return first (backend orders by log id DESC) — so
+      // the latest activity always surfaces at the top of the list.
+      if (sortBy === 'recent') return 0;
+      if (sortBy === 'name_desc') return (b.name || '').localeCompare(a.name || '');
+      if (sortBy === 'status') return (a.status || '').localeCompare(b.status || '') || (a.name || '').localeCompare(b.name || '');
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
       <View style={styles.warningBox}>
@@ -103,7 +143,27 @@ export default function GuardScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Key borrowing log</Text>
-      {keylog.map((log) => (
+      <ListControls
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by name, department, key..."
+        filter={{
+          value: statusFilter,
+          options: STATUS_OPTIONS,
+          onChange: setStatusFilter,
+          title: 'Filter by status',
+          label: 'All statuses',
+        }}
+        sort={{
+          value: sortBy,
+          options: SORT_OPTIONS,
+          onChange: setSortBy,
+          title: 'Sort by',
+        }}
+      />
+      {visibleKeylog.length === 0 ? (
+        <Text style={styles.empty}>No entries match your search.</Text>
+      ) : visibleKeylog.map((log) => (
         <View key={log.log_no} style={styles.card}>
           <View style={{ flex: 1 }}>
             <Text style={styles.cardTitle}>{log.name} · {log.department}</Text>
@@ -176,22 +236,23 @@ export default function GuardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   warningBox: { backgroundColor: colors.dangerBg, borderRadius: 8, padding: 12, marginBottom: 14 },
   warningText: { color: colors.danger, fontSize: 12, fontWeight: '600' },
   actionRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   scanBtn: { flex: 1, backgroundColor: colors.maroon, borderRadius: 8, padding: 12, alignItems: 'center' },
-  scanBtnOutline: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.maroon },
+  scanBtnOutline: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.maroon },
   scanBtnText: { color: colors.white, fontWeight: '600', fontSize: 13 },
   scanBtnOutlineText: { color: colors.maroon },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 10 },
   card: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
     borderRadius: 10, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: colors.border,
   },
   cardTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
   cardMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  empty: { color: colors.textMuted, textAlign: 'center', marginVertical: 10 },
   closeScanner: {
     position: 'absolute', bottom: 40, alignSelf: 'center',
     backgroundColor: colors.maroon, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24,
@@ -212,7 +273,7 @@ const styles = StyleSheet.create({
   frameCornerBL: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 12 },
   frameCornerBR: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 12 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  sheet: { backgroundColor: colors.white, borderRadius: 12, padding: 16 },
+  sheet: { backgroundColor: colors.surface, borderRadius: 12, padding: 16 },
   formTitle: { fontWeight: '700', color: colors.maroon, marginBottom: 10, fontSize: 14 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 13 },
   cancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.border },

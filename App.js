@@ -1,12 +1,14 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useEffect } from 'react';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, View } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { ActivityIndicator, View, Platform, Dimensions } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
-import colors from './theme/colors';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 import LoginScreen from './screens/LoginScreen';
 import PortalScreen from './screens/PortalScreen';
@@ -23,13 +25,13 @@ const TAB_ICONS = {
   Tools: 'construct',
   Vehicles: 'car',
   Safety: 'shield-checkmark',
-  Janitorial: 'sparkles',
+  Janitorial: 'broom',
   Guard: 'shield',
   Profile: 'person-circle',
 };
 
 const TAB_TITLES = {
-  Tools: 'Tools & Equipment',
+  Tools: 'Tools Management',
   Vehicles: 'Vehicles',
   Safety: 'Safety',
   Janitorial: 'Janitorial',
@@ -46,38 +48,52 @@ const TAB_COMPONENTS = {
   Profile: PortalScreen,
 };
 
-// A single-position account (Janitorial/Maintenance/Tools) only ever needs
-// its own module — everything else on the portal is someone else's job.
-// The 'tools' role is the "facilities" login in the app; 'administrator'
+// A single-position account (Janitorial/Maintenance/Tools/Security) only
+// needs its own module(s) — everything else on the portal is someone else's
+// job. 'facilities' covers the broader facilities team (Tools, Vehicles,
+// Safety) but deliberately excludes Janitorial, a separate role. 'administrator'
 // is intentionally absent here so it falls through to full access below.
 // Only these roles (plus administrator) can sign in at all — enforced
 // server-side in Api::assertRoleAllowed().
 const ROLE_TAB_MAP = {
-  janitorial: 'Janitorial',
-  maintenance: 'Safety',
-  tools: 'Tools',
+  janitorial: ['Janitorial'],
+  maintenance: ['Safety'],
+  tools: ['Tools'],
+  vehicles: ['Vehicles'],
+  security: ['Guard'],
+  facilities: ['Tools', 'Vehicles', 'Safety'],
 };
-
-const tabScreenOptions = ({ route }) => ({
-  headerStyle: { backgroundColor: colors.maroon },
-  headerTintColor: colors.white,
-  headerTitleStyle: { fontWeight: '700' },
-  tabBarActiveTintColor: colors.maroon,
-  tabBarInactiveTintColor: colors.textMuted,
-  tabBarIcon: ({ color, size }) => (
-    <Ionicons name={TAB_ICONS[route.name]} size={size} color={color} />
-  ),
-});
 
 function MainTabs() {
   const { user } = useAuth();
-  const restrictedTab = ROLE_TAB_MAP[(user?.role || '').toLowerCase().trim()];
+  const { colors } = useTheme();
+  const allowedTabs = ROLE_TAB_MAP[(user?.role || '').toLowerCase().trim()];
 
-  if (restrictedTab) {
-    const Component = TAB_COMPONENTS[restrictedTab];
+  const tabScreenOptions = ({ route }) => ({
+    headerStyle: { backgroundColor: colors.maroon },
+    headerTintColor: colors.white,
+    headerTitleStyle: { fontWeight: '700' },
+    tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+    tabBarActiveTintColor: colors.maroon,
+    tabBarInactiveTintColor: colors.textMuted,
+    tabBarIcon: ({ color, size }) => (
+      route.name === 'Janitorial'
+        ? <MaterialCommunityIcons name={TAB_ICONS[route.name]} size={size} color={color} />
+        : <Ionicons name={TAB_ICONS[route.name]} size={size} color={color} />
+    ),
+  });
+
+  if (allowedTabs) {
     return (
-      <Tab.Navigator screenOptions={tabScreenOptions} initialRouteName={restrictedTab}>
-        <Tab.Screen name={restrictedTab} component={Component} options={{ title: TAB_TITLES[restrictedTab] }} />
+      <Tab.Navigator screenOptions={tabScreenOptions} initialRouteName={allowedTabs[0]}>
+        {allowedTabs.map((tabName) => (
+          <Tab.Screen
+            key={tabName}
+            name={tabName}
+            component={TAB_COMPONENTS[tabName]}
+            options={{ title: TAB_TITLES[tabName] }}
+          />
+        ))}
         <Tab.Screen name="Profile" component={PortalScreen} options={{ title: 'Profile' }} />
       </Tab.Navigator>
     );
@@ -85,7 +101,7 @@ function MainTabs() {
 
   return (
     <Tab.Navigator screenOptions={tabScreenOptions}>
-      <Tab.Screen name="Tools" component={ToolsScreen} options={{ title: 'Tools & Equipment' }} />
+      <Tab.Screen name="Tools" component={ToolsScreen} options={{ title: 'Tools Management' }} />
       <Tab.Screen name="Vehicles" component={VehicleScreen} options={{ title: 'Vehicles' }} />
       <Tab.Screen name="Safety" component={SafetyScreen} options={{ title: 'Safety' }} />
       <Tab.Screen name="Janitorial" component={JanitorialScreen} options={{ title: 'Janitorial' }} />
@@ -99,10 +115,11 @@ function MainTabs() {
 
 function RootNavigator() {
   const { user, loading } = useAuth();
+  const { colors } = useTheme();
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
         <ActivityIndicator size="large" color={colors.maroon} />
       </View>
     );
@@ -119,12 +136,58 @@ function RootNavigator() {
   );
 }
 
-export default function App() {
+function ThemedApp() {
+  const { colors, isDark } = useTheme();
+
+  const navTheme = {
+    ...(isDark ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+      primary: colors.maroon,
+      background: colors.bg,
+      card: colors.surface,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
+
   return (
-    <AuthProvider>
-      <NavigationContainer>
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <NavigationContainer theme={navTheme}>
         <RootNavigator />
       </NavigationContainer>
-    </AuthProvider>
+    </>
+  );
+}
+
+// Android has no Platform.isPad equivalent, so tablets are detected the same
+// way Android itself does for resource qualifiers: shortest-side >= 600dp
+// (the sw600dp breakpoint) means a 7"+ tablet, not a phone.
+function isAndroidTablet() {
+  if (Platform.OS !== 'android') return false;
+  const { width, height } = Dimensions.get('window');
+  return Math.min(width, height) >= 600;
+}
+
+export default function App() {
+  useEffect(() => {
+    // Tablets (iPad, Android) follow device rotation; phones stay
+    // portrait-locked — none of the screens in this app were laid out with
+    // landscape in mind on a phone-sized screen.
+    const isTablet = (Platform.OS === 'ios' && Platform.isPad) || isAndroidTablet();
+    if (isTablet) {
+      ScreenOrientation.unlockAsync();
+    } else {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    }
+  }, []);
+
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <ThemedApp />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
