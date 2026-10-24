@@ -23,6 +23,8 @@ const AVAILABILITY_OPTIONS = [
 ];
 
 const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest to oldest' },
+  { value: 'oldest', label: 'Oldest to newest' },
   { value: 'name_asc', label: 'Name (A–Z)' },
   { value: 'name_desc', label: 'Name (Z–A)' },
   { value: 'status', label: 'Status' },
@@ -121,7 +123,7 @@ export default function VehicleScreen() {
     2: vehicles.filter((v) => v.wheels === 2).length,
   };
 
-  const visibleVehicles = vehicles
+  const visibleVehicles = (sortBy === 'oldest' ? [...vehicles].reverse() : vehicles)
     .filter((v) => !availabilityFilter || v.availability === availabilityFilter)
     .filter((v) => !wheelFilter || v.wheels === wheelFilter)
     .filter((v) => {
@@ -134,6 +136,8 @@ export default function VehicleScreen() {
       );
     })
     .sort((a, b) => {
+      // API returns newest first (vehicles.id DESC); sort is stable, so keep that order.
+      if (sortBy === 'newest' || sortBy === 'oldest') return 0;
       if (sortBy === 'name_desc') return b.name.localeCompare(a.name);
       if (sortBy === 'status') return a.availability.localeCompare(b.availability) || a.name.localeCompare(b.name);
       return a.name.localeCompare(b.name);

@@ -103,7 +103,7 @@ export default function LoginScreen() {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-      <Image source={require('../assets/fags-logo.png')} style={styles.logo} />
+      <Image source={require('../assets/ubra-logo.png')} style={styles.logo} />
       <Text style={styles.title}>UBRA</Text>
       <Text style={styles.subtitle}>Foundation University</Text>
 
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
   // isn't legible any smaller.
   logo: { width: 112, height: 112, marginBottom: 12 },
   title: { color: colors.white, fontSize: 24, fontWeight: '800' },
-  subtitle: { color: '#e9c8c9', fontSize: 13, marginBottom: 28 },
+  subtitle: { color: '#e9c8c9', fontSize: 16, marginBottom: 28 },
   form: { width: '100%', maxWidth: 360 },
   label: { color: '#f0d5d6', fontSize: 12, marginBottom: 6, marginTop: 14 },
   input: {

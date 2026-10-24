@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator, FlatList } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator, FlatList, Alert } from 'react-native';
 import client from '../api/client';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import Badge from './Badge';
 
 function formatDate(d) {
@@ -9,8 +10,12 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+const MAX_EXTEND_DAYS = 3;
+
 export default function ToolHistoryModal({ visible, tool, onClose }) {
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const [extendingId, setExtendingId] = useState(null);
   const styles = useMemo(() => getStyles(colors), [colors]);
   const [history, setHistory] = useState([]);
   const [unit, setUnit] = useState(null);
@@ -31,6 +36,27 @@ export default function ToolHistoryModal({ visible, tool, onClose }) {
       setLoading(false);
     }
   }, [tool]);
+
+  // Only the borrower (or an administrator) may extend — the server enforces
+  // the same rule, this just avoids offering a button that would be refused.
+  const canExtend = (item) => item.can_extend && (
+    String(user?.role || '').toLowerCase() === 'administrator'
+    || String(item.borrower || '').toLowerCase() === String(user?.name || '').toLowerCase()
+    || String(item.borrower) === String(user?.employee_id)
+  );
+
+  async function extend(item, days) {
+    setExtendingId(item.id);
+    try {
+      const res = await client.post('/tools/extend', { borrow_id: item.id, days });
+      Alert.alert('Borrow extended', res.data?.message || 'Due date updated.');
+      await load();
+    } catch (e) {
+      Alert.alert('Could not extend', e.response?.data?.message || e.message);
+    } finally {
+      setExtendingId(null);
+    }
+  }
 
   useEffect(() => {
     if (visible) load();
@@ -78,6 +104,21 @@ export default function ToolHistoryModal({ visible, tool, onClose }) {
                     {item.condition_status ? ` · Condition: ${item.condition_status}` : ''}
                   </Text>
                 ) : null}
+                {canExtend(item) ? (
+                  <View style={styles.extendRow}>
+                    <Text style={styles.extendLabel}>Need more time? Extend by</Text>
+                    {Array.from({ length: MAX_EXTEND_DAYS }, (_, i) => i + 1).map((d) => (
+                      <TouchableOpacity
+                        key={d}
+                        style={[styles.extendBtn, extendingId === item.id && styles.extendBtnDisabled]}
+                        disabled={extendingId === item.id}
+                        onPress={() => extend(item, d)}
+                      >
+                        <Text style={styles.extendBtnText}>+{d}d</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
                 {item.remarks ? <Text style={styles.remarks}>“{item.remarks}”</Text> : null}
               </View>
             )}
@@ -106,5 +147,12 @@ const getStyles = (colors) => StyleSheet.create({
   entryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   borrower: { fontSize: 14, fontWeight: '700', color: colors.text },
   meta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  extendRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10 },
+  extendLabel: { fontSize: 12, color: colors.text, marginRight: 8 },
+  extendBtn: {
+    backgroundColor: colors.maroon, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 5, marginRight: 6,
+  },
+  extendBtnDisabled: { opacity: 0.5 },
+  extendBtnText: { color: colors.white, fontWeight: '700', fontSize: 12 },
   remarks: { fontSize: 12, color: colors.text, fontStyle: 'italic', marginTop: 6 },
 });

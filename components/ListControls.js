@@ -47,40 +47,44 @@ export default function ListControls({
         />
       </View>
 
-      {filter && (
-        <TouchableOpacity
-          style={[styles.chip, filterActive && styles.chipActive]}
-          onPress={() => setOpenPicker('filter')}
-        >
-          <Ionicons name="filter" size={14} color={filterActive ? colors.white : colors.maroon} />
-          <Text style={[styles.chipText, filterActive && styles.chipTextActive]} numberOfLines={1}>
-            {filterLabel}
-          </Text>
-        </TouchableOpacity>
-      )}
+      {(filter || filter2 || sort) && (
+        <View style={styles.chipRow}>
+        {filter && (
+          <TouchableOpacity
+            style={[styles.chip, filterActive && styles.chipActive]}
+            onPress={() => setOpenPicker('filter')}
+          >
+            <Ionicons name="filter" size={14} color={filterActive ? colors.white : colors.maroon} />
+            <Text style={[styles.chipText, filterActive && styles.chipTextActive]} numberOfLines={1}>
+              {filterLabel}
+            </Text>
+          </TouchableOpacity>
+        )}
 
-      {filter2 && (
-        <TouchableOpacity
-          style={[styles.chip, filter2Active && styles.chipActive]}
-          onPress={() => setOpenPicker('filter2')}
-        >
-          <Ionicons name="layers" size={14} color={filter2Active ? colors.white : colors.maroon} />
-          <Text style={[styles.chipText, filter2Active && styles.chipTextActive]} numberOfLines={1}>
-            {filter2Label}
-          </Text>
-        </TouchableOpacity>
-      )}
+        {filter2 && (
+          <TouchableOpacity
+            style={[styles.chip, filter2Active && styles.chipActive]}
+            onPress={() => setOpenPicker('filter2')}
+          >
+            <Ionicons name="layers" size={14} color={filter2Active ? colors.white : colors.maroon} />
+            <Text style={[styles.chipText, filter2Active && styles.chipTextActive]} numberOfLines={1}>
+              {filter2Label}
+            </Text>
+          </TouchableOpacity>
+        )}
 
-      {sort && (
-        <TouchableOpacity
-          style={[styles.chip, sortActive && styles.chipActive]}
-          onPress={() => setOpenPicker('sort')}
-        >
-          <Ionicons name="swap-vertical" size={14} color={sortActive ? colors.white : colors.maroon} />
-          <Text style={[styles.chipText, sortActive && styles.chipTextActive]} numberOfLines={1}>
-            {sortLabel}
-          </Text>
-        </TouchableOpacity>
+        {sort && (
+          <TouchableOpacity
+            style={[styles.chip, sortActive && styles.chipActive]}
+            onPress={() => setOpenPicker('sort')}
+          >
+            <Ionicons name="swap-vertical" size={14} color={sortActive ? colors.white : colors.maroon} />
+            <Text style={[styles.chipText, sortActive && styles.chipTextActive]} numberOfLines={1}>
+              {sortLabel}
+            </Text>
+          </TouchableOpacity>
+        )}
+        </View>
       )}
 
       {filter && (
@@ -116,12 +120,13 @@ export default function ListControls({
 
 const getStyles = (colors) => StyleSheet.create({
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+    gap: 10,
     backgroundColor: colors.surface, padding: 12, borderRadius: 10,
     borderWidth: 1, borderColor: colors.border, marginBottom: 14,
   },
+  chipRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   searchBox: {
-    flex: 1, minWidth: 120, flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: colors.bg, borderRadius: 20, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: 12, paddingVertical: 8,
   },
@@ -129,7 +134,7 @@ const getStyles = (colors) => StyleSheet.create({
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 11,
     borderRadius: 20, backgroundColor: colors.pink, borderWidth: 1, borderColor: colors.maroon,
-    maxWidth: 130,
+    maxWidth: 170,
   },
   chipActive: { backgroundColor: colors.maroon, borderColor: colors.maroon },
   chipText: { color: colors.maroon, fontWeight: '600', fontSize: 12 },

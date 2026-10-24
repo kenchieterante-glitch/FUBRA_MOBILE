@@ -3,7 +3,7 @@ import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, View, Platform, Dimensions } from 'react-native';
+import { ActivityIndicator, View, TouchableOpacity, Platform, Dimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
@@ -18,11 +18,16 @@ import SafetyScreen from './screens/SafetyScreen';
 import JanitorialScreen from './screens/JanitorialScreen';
 import GuardScreen from './screens/GuardScreen';
 
+function SportsScreen() {
+  return <ToolsScreen sports />;
+}
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const TAB_ICONS = {
   Tools: 'construct',
+  Sports: 'basketball',
   Vehicles: 'car',
   Safety: 'shield-checkmark',
   Janitorial: 'broom',
@@ -32,6 +37,7 @@ const TAB_ICONS = {
 
 const TAB_TITLES = {
   Tools: 'Tools Management',
+  Sports: 'Sports',
   Vehicles: 'Vehicles',
   Safety: 'Safety',
   Janitorial: 'Janitorial',
@@ -41,6 +47,7 @@ const TAB_TITLES = {
 
 const TAB_COMPONENTS = {
   Tools: ToolsScreen,
+  Sports: SportsScreen,
   Vehicles: VehicleScreen,
   Safety: SafetyScreen,
   Janitorial: JanitorialScreen,
@@ -58,10 +65,13 @@ const TAB_COMPONENTS = {
 const ROLE_TAB_MAP = {
   janitorial: ['Janitorial'],
   maintenance: ['Safety'],
+  safety: ['Safety'],
   tools: ['Tools'],
+  sports: ['Sports'],
   vehicles: ['Vehicles'],
   security: ['Guard'],
-  facilities: ['Tools', 'Vehicles', 'Safety'],
+  facilities: ['Tools', 'Sports', 'Vehicles', 'Safety'],
+  assets: ['Tools', 'Sports', 'Vehicles'],
 };
 
 function MainTabs() {
@@ -69,13 +79,19 @@ function MainTabs() {
   const { colors } = useTheme();
   const allowedTabs = ROLE_TAB_MAP[(user?.role || '').toLowerCase().trim()];
 
-  const tabScreenOptions = ({ route }) => ({
+  const tabScreenOptions = ({ route, navigation }) => ({
     headerStyle: { backgroundColor: colors.maroon },
     headerTintColor: colors.white,
     headerTitleStyle: { fontWeight: '700' },
     tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
     tabBarActiveTintColor: colors.maroon,
     tabBarInactiveTintColor: colors.textMuted,
+    // Profile lives in the header's top-right corner instead of the tab bar.
+    headerRight: route.name === 'Profile' ? undefined : () => (
+      <TouchableOpacity onPress={() => navigation.navigate('Profile')} style={{ marginRight: 14 }}>
+        <Ionicons name="person-circle" size={28} color={colors.white} />
+      </TouchableOpacity>
+    ),
     tabBarIcon: ({ color, size }) => (
       route.name === 'Janitorial'
         ? <MaterialCommunityIcons name={TAB_ICONS[route.name]} size={size} color={color} />
@@ -94,7 +110,11 @@ function MainTabs() {
             options={{ title: TAB_TITLES[tabName] }}
           />
         ))}
-        <Tab.Screen name="Profile" component={PortalScreen} options={{ title: 'Profile' }} />
+        <Tab.Screen
+        name="Profile"
+        component={PortalScreen}
+        options={{ title: 'Profile', tabBarItemStyle: { display: 'none' } }}
+      />
       </Tab.Navigator>
     );
   }
@@ -102,13 +122,18 @@ function MainTabs() {
   return (
     <Tab.Navigator screenOptions={tabScreenOptions}>
       <Tab.Screen name="Tools" component={ToolsScreen} options={{ title: 'Tools Management' }} />
+      <Tab.Screen name="Sports" component={SportsScreen} options={{ title: 'Sports' }} />
       <Tab.Screen name="Vehicles" component={VehicleScreen} options={{ title: 'Vehicles' }} />
       <Tab.Screen name="Safety" component={SafetyScreen} options={{ title: 'Safety' }} />
       <Tab.Screen name="Janitorial" component={JanitorialScreen} options={{ title: 'Janitorial' }} />
       {user?.is_guard && (
         <Tab.Screen name="Guard" component={GuardScreen} options={{ title: 'Guard Dashboard' }} />
       )}
-      <Tab.Screen name="Profile" component={PortalScreen} options={{ title: 'Profile' }} />
+      <Tab.Screen
+        name="Profile"
+        component={PortalScreen}
+        options={{ title: 'Profile', tabBarItemStyle: { display: 'none' } }}
+      />
     </Tab.Navigator>
   );
 }

@@ -3,7 +3,6 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Alert, Modal,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import client from '../api/client';
 import { useTheme } from '../context/ThemeContext';
 import StatCard from '../components/StatCard';
@@ -52,19 +51,16 @@ export default function SafetyScreen() {
 
   const [showAddExtinguisher, setShowAddExtinguisher] = useState(false);
   const [extinguisher, setExtinguisher] = useState({ type: 'Dry Chemical', kg: '', installed: '', inspected: '', expiry: '' });
-  const [unitCode, setUnitCode] = useState(null);
-  const [scanning, setScanning] = useState(false);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [aircon, setAircon] = useState(null);
+  const [airconUnits, setAirconUnits] = useState([]);
   const [showAddAircon, setShowAddAircon] = useState(false);
   const [newAircon, setNewAircon] = useState({ unit_name: '', condition: 'Operational', assigned_tech: '' });
   const [conditionPickerOpen, setConditionPickerOpen] = useState(false);
   const [savingAircon, setSavingAircon] = useState(false);
 
   const [loading, setLoading] = useState(true);
-  const [permission, requestPermission] = useCameraPermissions();
 
   const load = useCallback(async () => {
     try {
@@ -100,28 +96,12 @@ export default function SafetyScreen() {
         client.get('/safety/aircon', { params: { building: b.key } }),
       ]);
       setExtinguisherUnits(units.data.units || []);
-      setAircon(unit.data.unit || null);
+      setAirconUnits(unit.data.units || (unit.data.unit ? [unit.data.unit] : []));
     } catch (e) {
       Alert.alert('Error loading building details', e.message);
     } finally {
       setLoadingBuilding(false);
     }
-  }
-
-  async function openScanner() {
-    if (!permission?.granted) {
-      const res = await requestPermission();
-      if (!res.granted) {
-        Alert.alert('Camera permission needed', 'Enable camera access to scan the extinguisher tag.');
-        return;
-      }
-    }
-    setScanning(true);
-  }
-
-  function handleTagScanned({ data }) {
-    setScanning(false);
-    setUnitCode(data);
   }
 
   async function saveExtinguisher() {
@@ -131,11 +111,9 @@ export default function SafetyScreen() {
       await client.post('/safety/fire-extinguishers', {
         building: selected.key,
         ...extinguisher,
-        unit_code: unitCode,
       });
       Alert.alert('Saved', 'Fire extinguisher record added.');
       setExtinguisher({ type: 'Dry Chemical', kg: '', installed: '', inspected: '', expiry: '' });
-      setUnitCode(null);
       setShowAddExtinguisher(false);
       selectBuilding(selected);
       load();
@@ -164,8 +142,9 @@ export default function SafetyScreen() {
     }
   }
 
-  async function toggleChecklistTask(task) {
-    if (!aircon) return;
+  async function toggleChecklistTask(aircon, task) {
+    const replaceUnit = (checklist) =>
+      setAirconUnits((list) => list.map((u) => (u.id === aircon.id ? { ...u, checklist } : u)));
     const updatedTasks = aircon.checklist.map((t) => {
       if (t.id !== task.id) return t;
       const done = !t.done;
@@ -173,14 +152,14 @@ export default function SafetyScreen() {
       // stale value from whatever the server last returned.
       return { ...t, done, completed_at: done ? new Date().toISOString() : null };
     });
-    setAircon({ ...aircon, checklist: updatedTasks });
+    replaceUnit(updatedTasks);
     try {
       const res = await client.post(`/safety/aircon/checklist/${aircon.id}`, {
         tasks: updatedTasks.map((t) => ({ id: t.id, done: t.done })),
       });
-      setAircon({ ...aircon, checklist: res.data.checklist });
+      replaceUnit(res.data.checklist);
     } catch (e) {
-      setAircon({ ...aircon, checklist: aircon.checklist });
+      replaceUnit(aircon.checklist);
       Alert.alert('Error updating checklist', e.message);
     }
   }
@@ -335,10 +314,6 @@ export default function SafetyScreen() {
 
           {showAddExtinguisher && (
             <View style={styles.addBox}>
-              <TouchableOpacity style={styles.scanBtn} onPress={openScanner}>
-                <Text style={styles.scanBtnText}>{unitCode ? `⧉ Tag scanned: ${unitCode}` : '⧉ Scan extinguisher QR tag'}</Text>
-              </TouchableOpacity>
-
               <TouchableOpacity style={styles.input} onPress={() => setTypePickerOpen(true)}>
                 <Text style={{ color: colors.text }}>{extinguisher.type}</Text>
               </TouchableOpacity>
@@ -359,8 +334,9 @@ export default function SafetyScreen() {
           )}
 
           <Text style={[styles.subTitle, { marginTop: 20 }]}>Aircon unit & checklist</Text>
-          {aircon ? (
-            <View style={styles.airconBox}>
+          {airconUnits.length > 0 ? (
+            airconUnits.map((aircon) => (
+            <View key={aircon.id} style={[styles.airconBox, { marginBottom: 10 }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <Text style={styles.unitId}>{aircon.unit}</Text>
                 <Badge status={aircon.condition} />
@@ -370,7 +346,7 @@ export default function SafetyScreen() {
 
               <View style={{ marginTop: 10 }}>
                 {(aircon.checklist || []).map((task) => (
-                  <TouchableOpacity key={task.id} style={styles.checklistRow} onPress={() => toggleChecklistTask(task)}>
+                  <TouchableOpacity key={task.id} style={styles.checklistRow} onPress={() => toggleChecklistTask(aircon, task)}>
                     <View style={[styles.checkbox, task.done && styles.checkboxDone]}>
                       {task.done && <Text style={styles.checkboxMark}>✓</Text>}
                     </View>
@@ -380,6 +356,7 @@ export default function SafetyScreen() {
                 ))}
               </View>
             </View>
+            ))
           ) : (
             <Text style={styles.empty}>No aircon unit recorded for this building yet.</Text>
           )}
@@ -422,20 +399,6 @@ export default function SafetyScreen() {
         onClose={() => setConditionPickerOpen(false)}
         onSelect={(item) => { setNewAircon({ ...newAircon, condition: item.value }); setConditionPickerOpen(false); }}
       />
-
-      <Modal visible={scanning} animationType="slide">
-        <CameraView
-          style={{ flex: 1 }}
-          onBarcodeScanned={handleTagScanned}
-          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        />
-        <View style={styles.scannerHint}>
-          <Text style={styles.scannerHintText}>Scan the extinguisher's QR tag</Text>
-        </View>
-        <TouchableOpacity style={styles.closeScanner} onPress={() => setScanning(false)}>
-          <Text style={{ color: colors.white, fontWeight: '600' }}>Cancel scan</Text>
-        </TouchableOpacity>
-      </Modal>
     </ScrollView>
   );
 }
@@ -472,8 +435,6 @@ const getStyles = (colors) => StyleSheet.create({
   toggleBtnText: { color: colors.maroon, fontWeight: '700', fontSize: 13 },
   addBox: { marginTop: 10, backgroundColor: colors.bg, borderRadius: 8, padding: 10 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 13, justifyContent: 'center', backgroundColor: colors.surface, color: colors.text },
-  scanBtn: { borderWidth: 1, borderColor: colors.maroon, borderRadius: 8, padding: 10, alignItems: 'center', marginBottom: 8 },
-  scanBtnText: { color: colors.maroon, fontWeight: '600' },
   saveBtn: { backgroundColor: colors.maroon, borderRadius: 8, padding: 12, alignItems: 'center' },
   saveBtnText: { color: colors.white, fontWeight: '700' },
   airconBox: { backgroundColor: colors.bg, borderRadius: 8, padding: 12 },
@@ -489,13 +450,4 @@ const getStyles = (colors) => StyleSheet.create({
   checklistText: { flex: 1, fontSize: 13, color: colors.text },
   checklistTextDone: { color: colors.textMuted, textDecorationLine: 'line-through' },
   checklistTime: { fontSize: 11, color: colors.textMuted },
-  closeScanner: {
-    position: 'absolute', bottom: 40, alignSelf: 'center',
-    backgroundColor: colors.maroon, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24,
-  },
-  scannerHint: {
-    position: 'absolute', top: 60, alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
-  },
-  scannerHintText: { color: colors.white, fontWeight: '600', fontSize: 13 },
 });

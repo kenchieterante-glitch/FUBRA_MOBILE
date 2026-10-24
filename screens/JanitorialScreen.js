@@ -27,6 +27,8 @@ const STATUS_OPTIONS = [
 ];
 
 const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest to oldest' },
+  { value: 'oldest', label: 'Oldest to newest' },
   { value: 'name_asc', label: 'Name (A–Z)' },
   { value: 'name_desc', label: 'Name (Z–A)' },
   { value: 'status', label: 'Status' },
@@ -119,6 +121,8 @@ export default function JanitorialScreen() {
       return z.name.toLowerCase().includes(q) || (z.department || '').toLowerCase().includes(q);
     })
     .sort((a, b) => {
+      if (sortBy === 'newest') return Number(b.id) - Number(a.id);
+      if (sortBy === 'oldest') return Number(a.id) - Number(b.id);
       if (sortBy === 'name_desc') return b.name.localeCompare(a.name);
       if (sortBy === 'status') return a.status.localeCompare(b.status) || a.name.localeCompare(b.name);
       return a.name.localeCompare(b.name);

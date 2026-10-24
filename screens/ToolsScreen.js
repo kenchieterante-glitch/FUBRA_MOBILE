@@ -15,6 +15,8 @@ import ToolHistoryModal from '../components/ToolHistoryModal';
 const ATTENTION_STATUSES = ['Maintenance', 'Disposal'];
 
 const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest to oldest' },
+  { value: 'oldest', label: 'Oldest to newest' },
   { value: 'name_asc', label: 'Name (A–Z)' },
   { value: 'name_desc', label: 'Name (Z–A)' },
   { value: 'status', label: 'Status' },
@@ -39,7 +41,11 @@ const ToolRow = React.memo(function ToolRow({ item, styles, onPress }) {
   );
 });
 
-export default function ToolsScreen() {
+const isSportsCategory = (cat) => /sport/i.test(cat || '');
+
+// One screen backs both tabs: Tools hides Sports-category items, Sports shows
+// only those, so equipment management stays separate from tool management.
+export default function ToolsScreen({ sports = false }) {
   const { user } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => getStyles(colors), [colors]);
@@ -58,6 +64,7 @@ export default function ToolsScreen() {
   const [returnQty, setReturnQty] = useState(1);
   const [confirming, setConfirming] = useState(false);
   const [historyTool, setHistoryTool] = useState(null);
+  const [recentIds, setRecentIds] = useState([]); // asset_ids just borrowed/returned, newest first
   const [permission, requestPermission] = useCameraPermissions();
   const scanLockRef = useRef(false);
 
@@ -90,7 +97,7 @@ export default function ToolsScreen() {
   // gets a new array when a filter/search/sort/data input actually changes.
   const visibleTools = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return tools
+    return (sortBy === 'oldest' ? [...tools].reverse() : tools)
       .filter((t) => !category || t.category === category)
       .filter((t) => {
         if (!statusFilter) return true;
@@ -100,6 +107,8 @@ export default function ToolsScreen() {
       })
       .filter((t) => !q || t.tool_name.toLowerCase().includes(q) || t.asset_id.toLowerCase().includes(q))
       .sort((a, b) => {
+        // API returns newest first (tools.id DESC); sort is stable, so keep that order.
+        if (sortBy === 'newest' || sortBy === 'oldest') return 0;
         if (sortBy === 'name_desc') return b.tool_name.localeCompare(a.tool_name);
         if (sortBy === 'status') return a.status.localeCompare(b.status) || a.tool_name.localeCompare(b.tool_name);
         return a.tool_name.localeCompare(b.tool_name);
@@ -110,15 +119,22 @@ export default function ToolsScreen() {
   // catalog (Power Tools, Consumable, ...) instead of one long flat list.
   const sections = useMemo(() => {
     const byCategory = {};
-    visibleTools.forEach((t) => {
+    // Items the user just borrowed/returned are pinned in their own section
+    // at the top (most recent first) so they can confirm the action landed.
+    const recent = recentIds
+      .map((id) => visibleTools.find((t) => t.asset_id === id))
+      .filter(Boolean);
+    const recentSet = new Set(recent.map((t) => t.asset_id));
+    visibleTools.filter((t) => !recentSet.has(t.asset_id)).forEach((t) => {
       const cat = t.category || 'Uncategorized';
       if (!byCategory[cat]) byCategory[cat] = [];
       byCategory[cat].push(t);
     });
-    return Object.keys(byCategory)
+    const catSections = Object.keys(byCategory)
       .sort((a, b) => a.localeCompare(b))
       .map((cat) => ({ title: cat, data: byCategory[cat] }));
-  }, [visibleTools]);
+    return recent.length ? [{ title: 'Recent activity', data: recent }, ...catSections] : catSections;
+  }, [visibleTools, recentIds]);
 
   const renderItem = useCallback(
     ({ item }) => <ToolRow item={item} styles={styles} onPress={setHistoryTool} />,
@@ -138,12 +154,12 @@ export default function ToolsScreen() {
     (async () => {
       try {
         const res = await client.get('/tools/categories');
-        setCategories(res.data.categories || []);
+        setCategories((res.data.categories || []).filter((c) => isSportsCategory(c) === sports));
       } catch (e) {
         // Non-fatal — fall back to showing all tools ungrouped.
       }
     })();
-  }, []);
+  }, [sports]);
 
   const loadTools = useCallback(async () => {
     try {
@@ -151,14 +167,14 @@ export default function ToolsScreen() {
       // client-side so the dashboard totals and category chips stay accurate
       // no matter what the list below is currently narrowed to.
       const res = await client.get('/tools');
-      setTools(res.data.tools || []);
+      setTools((res.data.tools || []).filter((t) => isSportsCategory(t.category) === sports));
     } catch (e) {
       Alert.alert('Error loading tools', e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [sports]);
 
   useEffect(() => { setLoading(true); loadTools(); }, [loadTools]);
 
@@ -237,6 +253,8 @@ export default function ToolsScreen() {
       const res = await client.post(endpoint, payload);
       setScanResult(res.data);
       setPendingScan(null);
+      const doneId = tool?.asset_id ?? code;
+      setRecentIds((ids) => [doneId, ...ids.filter((id) => id !== doneId)].slice(0, 5));
       loadTools();
     } catch (e) {
       Alert.alert('Scan failed', e.message);
@@ -453,6 +471,10 @@ export default function ToolsScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+            ) : null}
+
+            {pendingScan?.mode === 'borrow' && isScanEligible(pendingScan) && pendingScan.tool.category !== 'Consumable' ? (
+              <Text style={styles.qtyHint}>Due back within 3 days — you can extend it from the item's history.</Text>
             ) : null}
 
             {pendingScan?.mode === 'borrow' && pendingScan?.tool && isScanEligible(pendingScan) ? (
